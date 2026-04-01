@@ -82,11 +82,12 @@ with st.sidebar:
 st.markdown("---")
 
 # Main tabs
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Overview", 
     "💰 Spending Analysis", 
     "🗑️ Waste Insights", 
-    "⚠️ Expiring Soon"
+    "⚠️ Expiring Soon",
+    "📝 Shopping List"
 ])
 
 # TAB 1: OVERVIEW
@@ -441,6 +442,64 @@ with tab4:
     except Exception as e:
         st.warning("⚠️ Expiry tracking not available yet. Add the expiry_date column to your purchases to use this feature!")
         st.caption(f"Error: {e}")
+
+# TAB 5: SHOPPING LIST  
+with tab5:
+    st.header("📝 Smart Shopping List")
+    st.markdown("AI-generated recommendations based on your consumption patterns")
+    
+    try:
+        # Import forecasting modules
+        sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+        from forecasting.eoq_optimizer import generate_shopping_list_recommendations
+        
+        if st.button("🔮 Generate This Week's List", type="primary"):
+            with st.spinner("Analyzing your consumption patterns..."):
+                recommendations = generate_shopping_list_recommendations()
+            
+            if recommendations:
+                st.success(f"✅ Generated {len(recommendations)} recommendations")
+                
+                # Group by purchase frequency
+                buy_now = [r for r in recommendations if r.get('purchase_frequency_weeks') == 1]
+                buy_soon = [r for r in recommendations if r.get('purchase_frequency_weeks', 99) in [2, 3]]
+                high_waste_risk = [r for r in recommendations if r.get('waste_risk') == 'HIGH']
+                
+                # Buy This Week
+                if buy_now:
+                    st.subheader("🛒 Buy This Week")
+                    buy_df = pd.DataFrame(buy_now)
+                    st.dataframe(
+                        buy_df[['product_name', 'recommendation', 'cost_per_week', 'waste_risk']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                
+                # Buy Soon
+                if buy_soon:
+                    st.subheader("⏰ Buy in Next 2-3 Weeks")
+                    soon_df = pd.DataFrame(buy_soon)
+                    st.dataframe(
+                        soon_df[['product_name', 'recommendation', 'waste_risk']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                
+                # High Waste Risk Items
+                if high_waste_risk:
+                    st.subheader("🚨 High Waste Risk - Consider Smaller Packs")
+                    risk_df = pd.DataFrame(high_waste_risk)
+                    st.dataframe(
+                        risk_df[['product_name', 'recommendation']],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+            else:
+                st.info("Not enough consumption data yet. Log waste for 3+ weeks to generate recommendations.")
+    
+    except Exception as e:
+        st.error(f"Error generating shopping list: {e}")
+        st.info("Make sure you've logged consumption data for at least 3 weeks")
 
 st.markdown("---")
 st.caption("*Solo Shopper - Built with Streamlit | Data stored in Supabase PostgreSQL*")
