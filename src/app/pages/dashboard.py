@@ -11,8 +11,8 @@ from datetime import datetime, timedelta
 import sys
 from pathlib import Path
 
-# Add parent directory to path to import db_connection
-sys.path.append(str(Path(__file__).parent.parent))
+# Fix import path for Streamlit multi-page app
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from database.db_connection import execute_query
 
 # Page config

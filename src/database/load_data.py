@@ -63,6 +63,18 @@ def load_all_data():
                   row['waste_reason'] if pd.notna(row['waste_reason']) else None,
                   row['waste_cost_gbp']))
         
+        # 5. FIX SEQUENCES (NEW - prevents duplicate key errors)
+        print("\n🔧 Fixing sequences...")
+        cur.execute("""
+            SELECT setval('products_product_id_seq', 
+                         (SELECT MAX(product_id) FROM products));
+        """)
+        cur.execute("""
+            SELECT setval('purchases_purchase_id_seq', 
+                         (SELECT MAX(purchase_id) FROM purchases));
+        """)
+        print("✅ Sequences fixed!")
+        
         conn.commit()
         print("\n✅ All data loaded successfully!")
         
