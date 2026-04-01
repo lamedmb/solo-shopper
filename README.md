@@ -62,6 +62,5 @@ See [docs/setup.md](docs/setup.md) for installation instructions.
 
 ---
 
-**Author:** [Your Name]  
+**Author:** Lohla Bui  
 **Start Date:** April 2026  
-**Portfolio Project** for data analyst applications
