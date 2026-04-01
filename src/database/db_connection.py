@@ -6,17 +6,43 @@ from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 from pathlib import Path
 
+# Load .env for local development
 load_dotenv()
+
+# Try to import streamlit for cloud deployment
+try:
+    import streamlit as st
+    # Use Streamlit secrets if available (cloud deployment)
+    if hasattr(st, 'secrets'):
+        DB_HOST = st.secrets.get("DB_HOST", os.getenv('DB_HOST'))
+        DB_NAME = st.secrets.get("DB_NAME", os.getenv('DB_NAME'))
+        DB_USER = st.secrets.get("DB_USER", os.getenv('DB_USER'))
+        DB_PASSWORD = st.secrets.get("DB_PASSWORD", os.getenv('DB_PASSWORD'))
+        DB_PORT = st.secrets.get("DB_PORT", os.getenv('DB_PORT'))
+    else:
+        # Fallback to environment variables
+        DB_HOST = os.getenv('DB_HOST')
+        DB_NAME = os.getenv('DB_NAME')
+        DB_USER = os.getenv('DB_USER')
+        DB_PASSWORD = os.getenv('DB_PASSWORD')
+        DB_PORT = os.getenv('DB_PORT')
+except ImportError:
+    # Streamlit not available, use environment variables
+    DB_HOST = os.getenv('DB_HOST')
+    DB_NAME = os.getenv('DB_NAME')
+    DB_USER = os.getenv('DB_USER')
+    DB_PASSWORD = os.getenv('DB_PASSWORD')
+    DB_PORT = os.getenv('DB_PORT')
 
 def get_connection():
     """Create and return a database connection"""
     try:
         conn = psycopg2.connect(
-            host=os.getenv('DB_HOST'),
-            database=os.getenv('DB_NAME'),
-            user=os.getenv('DB_USER'),
-            password=os.getenv('DB_PASSWORD'),
-            port=os.getenv('DB_PORT'),
+            host=DB_HOST,
+            database=DB_NAME,
+            user=DB_USER,
+            password=DB_PASSWORD,
+            port=DB_PORT,
             connect_timeout=10,
             options='-c statement_timeout=30000'
         )
@@ -24,10 +50,10 @@ def get_connection():
     except Exception as e:
         print(f"Connection error: {e}")
         print(f"Attempting connection with:")
-        print(f"  Host: {os.getenv('DB_HOST')}")
-        print(f"  User: {os.getenv('DB_USER')}")
-        print(f"  Port: {os.getenv('DB_PORT')}")
-        print(f"  Database: {os.getenv('DB_NAME')}")
+        print(f"  Host: {DB_HOST}")
+        print(f"  User: {DB_USER}")
+        print(f"  Port: {DB_PORT}")
+        print(f"  Database: {DB_NAME}")
         raise
 
 def execute_query(query, params=None, fetch=True):
