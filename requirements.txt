@@ -8,4 +8,6 @@ seaborn
 beautifulsoup4
 requests
 pytest
-playwright
+scikit-learn
+scipy
+statsmodels
