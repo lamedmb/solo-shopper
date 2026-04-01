@@ -1,17 +1,17 @@
 """
-Solo Shopper - Personal Grocery Intelligence Dashboard
-Main Streamlit application
+Solo Shopper - Enhanced Dashboard
+Interactive analytics with filters and insights
 """
 
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import sys
 from pathlib import Path
 
-# Fix import path for Streamlit multi-page app
+# Fix import path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from database.db_connection import execute_query
 
@@ -19,11 +19,10 @@ from database.db_connection import execute_query
 st.set_page_config(
     page_title="Solo Shopper Dashboard",
     page_icon="🛒",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-# Custom CSS for better styling
+# Custom CSS
 st.markdown("""
     <style>
     .main-header {
@@ -36,7 +35,6 @@ st.markdown("""
         background-color: #f0f2f6;
         padding: 1rem;
         border-radius: 0.5rem;
-        margin: 0.5rem 0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -44,269 +42,405 @@ st.markdown("""
 # Title
 st.markdown('<p class="main-header">🛒 Solo Shopper Dashboard</p>', unsafe_allow_html=True)
 st.markdown("*Personal Grocery Intelligence System*")
-st.markdown("---")
 
-# Sidebar
+# Sidebar filters
 with st.sidebar:
-    st.markdown("### 🛒 Solo Shopper")
-    st.markdown("Personal Grocery Intelligence")
+    st.markdown("### 📊 Filters")
+    
+    # Date range filter
+    date_range = st.selectbox(
+        "Time Period",
+        ["Last 7 days", "Last 30 days", "Last 3 months", "All time"]
+    )
+    
+    # Map to SQL
+    if date_range == "Last 7 days":
+        date_filter = "WHERE p.date >= CURRENT_DATE - INTERVAL '7 days'"
+    elif date_range == "Last 30 days":
+        date_filter = "WHERE p.date >= CURRENT_DATE - INTERVAL '30 days'"
+    elif date_range == "Last 3 months":
+        date_filter = "WHERE p.date >= CURRENT_DATE - INTERVAL '3 months'"
+    else:
+        date_filter = ""
+    
+    # Store filter
+    store_filter = st.multiselect(
+        "Store",
+        ["Tesco", "Sainsburys"],
+        default=["Tesco", "Sainsburys"]
+    )
+    
     st.markdown("---")
     
-    st.markdown("### Navigation")
-    st.markdown("Use the tabs above to explore your grocery data")
-    
-    st.markdown("---")
-    st.markdown("### Quick Stats")
-    
-    # Get total products
+    # Quick stats
     total_products = execute_query("SELECT COUNT(*) as count FROM products")[0]['count']
     total_purchases = execute_query("SELECT COUNT(*) as count FROM purchases")[0]['count']
     
     st.metric("Products Tracked", total_products)
     st.metric("Total Purchases", total_purchases)
 
-# Main tabs
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Dashboard", "💰 Price Tracker", "🗑️ Waste Log", "📝 Shopping List"])
+st.markdown("---")
 
-# TAB 1: DASHBOARD
+# Main tabs
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Overview", 
+    "💰 Spending Analysis", 
+    "🗑️ Waste Insights", 
+    "⚠️ Expiring Soon"
+])
+
+# TAB 1: OVERVIEW
 with tab1:
-    st.header("Weekly Summary")
+    # Key metrics row
+    col1, col2, col3, col4 = st.columns(4)
     
-    col1, col2, col3 = st.columns(3)
-    
-    # Get latest week's data
-    latest_week_query = """
-    SELECT 
-        date,
-        SUM(price_paid) as total_spent,
-        COUNT(*) as items_bought
-    FROM purchases
-    GROUP BY date
-    ORDER BY date DESC
-    LIMIT 1
+    # Total spent
+    spent_query = f"""
+    SELECT SUM(price_paid) as total 
+    FROM purchases p
+    {date_filter}
     """
-    latest_week = execute_query(latest_week_query)
+    total_spent = execute_query(spent_query)[0]['total']
+    total_spent = float(total_spent) if total_spent else 0
     
-    if latest_week:
-        week_data = latest_week[0]
-        
-        # Get waste for that week
-        waste_query = """
-        SELECT SUM(waste_cost_gbp) as total_waste
-        FROM consumption_log
-        WHERE week_ending = %s
-        """
-        waste_data = execute_query(waste_query, (week_data['date'],))
-        total_waste = waste_data[0]['total_waste'] if waste_data[0]['total_waste'] else 0
-        
-        with col1:
-            st.metric("💸 Total Spent", f"£{week_data['total_spent']:.2f}")
-        
-        with col2:
-            st.metric("🗑️ Total Wasted", f"£{total_waste:.2f}")
-        
-        with col3:
-            effective_cost = week_data['total_spent'] - total_waste
-            st.metric("✅ Effective Cost", f"£{effective_cost:.2f}")
+    with col1:
+        st.metric("💸 Total Spent", f"£{total_spent:.2f}")
+    
+    # Total wasted
+    waste_query = f"""
+    SELECT SUM(waste_cost_gbp) as total
+    FROM consumption_log cl
+    JOIN purchases p ON cl.purchase_id = p.purchase_id
+    {date_filter.replace('p.date', 'cl.week_ending')}
+    """
+    total_waste = execute_query(waste_query)[0]['total']
+    total_waste = float(total_waste) if total_waste else 0
+    
+    with col2:
+        st.metric("🗑️ Total Wasted", f"£{total_waste:.2f}")
+    
+    # Effective cost
+    with col3:
+        effective = total_spent - total_waste
+        st.metric("✅ Effective Cost", f"£{effective:.2f}")
+    
+    # Waste rate
+    with col4:
+        waste_pct = (total_waste / total_spent * 100) if total_spent > 0 else 0
+        st.metric("📊 Waste Rate", f"{waste_pct:.1f}%")
     
     st.markdown("---")
     
-    # Spending over time
-    st.subheader("Spending Trend")
+    # Spending trend over time
+    col1, col2 = st.columns([2, 1])
     
-    spending_trend_query = """
-    SELECT 
-        date,
-        SUM(price_paid) as total_spent
-    FROM purchases
-    GROUP BY date
-    ORDER BY date
-    """
-    spending_data = pd.DataFrame(execute_query(spending_trend_query))
-    
-    if not spending_data.empty:
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.plot(spending_data['date'], spending_data['total_spent'], marker='o', linewidth=2, color='#1f77b4')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Total Spent (£)')
-        ax.set_title('Weekly Spending')
-        ax.grid(True, alpha=0.3)
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close()
-    else:
-        st.info("No spending data available yet")
-    
-    # Store comparison
-    st.subheader("Store Comparison")
-    
-    store_comparison_query = """
-    SELECT 
-        store,
-        COUNT(*) as purchases,
-        SUM(price_paid) as total_spent,
-        AVG(price_paid) as avg_price
-    FROM purchases
-    GROUP BY store
-    ORDER BY total_spent DESC
-    """
-    store_data = pd.DataFrame(execute_query(store_comparison_query))
-    
-    if not store_data.empty:
-        col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("Spending Trend")
         
-        with col1:
+        trend_query = f"""
+        SELECT 
+            date,
+            SUM(price_paid) as spent
+        FROM purchases p
+        {date_filter}
+        GROUP BY date
+        ORDER BY date
+        """
+        trend_data = pd.DataFrame(execute_query(trend_query))
+        
+        if not trend_data.empty:
+            trend_data['spent'] = trend_data['spent'].astype(float)
+            
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.plot(trend_data['date'], trend_data['spent'], marker='o', linewidth=2, color='#1f77b4')
+            ax.fill_between(trend_data['date'], trend_data['spent'], alpha=0.3, color='#1f77b4')
+            ax.set_xlabel('Date')
+            ax.set_ylabel('Spent (£)')
+            ax.grid(True, alpha=0.3)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+        else:
+            st.info("No spending data for selected period")
+    
+    with col2:
+        st.subheader("Category Breakdown")
+        
+        category_query = f"""
+        SELECT 
+            prod.category,
+            SUM(p.price_paid) as total
+        FROM purchases p
+        JOIN products prod ON p.product_id = prod.product_id
+        {date_filter}
+        GROUP BY prod.category
+        ORDER BY total DESC
+        """
+        category_data = pd.DataFrame(execute_query(category_query))
+        
+        if not category_data.empty:
+            category_data['total'] = category_data['total'].astype(float)
+            
+            fig, ax = plt.subplots(figsize=(6, 6))
+            colors = plt.cm.Set3(range(len(category_data)))
+            ax.pie(category_data['total'], labels=category_data['category'], autopct='%1.1f%%', colors=colors)
+            ax.set_title('Spending by Category')
+            st.pyplot(fig)
+            plt.close()
+        else:
+            st.info("No category data for selected period")
+
+# TAB 2: SPENDING ANALYSIS
+with tab2:
+    st.header("💰 Spending Analysis")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("Top 10 Most Expensive Items")
+        
+        expensive_query = f"""
+        SELECT 
+            prod.name,
+            COUNT(*) as times_bought,
+            AVG(p.price_paid) as avg_price,
+            SUM(p.price_paid) as total_spent
+        FROM purchases p
+        JOIN products prod ON p.product_id = prod.product_id
+        {date_filter}
+        GROUP BY prod.name
+        ORDER BY total_spent DESC
+        LIMIT 10
+        """
+        expensive_df = pd.DataFrame(execute_query(expensive_query))
+        
+        if not expensive_df.empty:
+            expensive_df['total_spent'] = expensive_df['total_spent'].astype(float)
+            expensive_df['avg_price'] = expensive_df['avg_price'].astype(float)
+            
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.barh(expensive_df['name'], expensive_df['total_spent'], color='#ff7f0e')
+            ax.set_xlabel('Total Spent (£)')
+            ax.set_title('Your Biggest Expenses')
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+            
+            st.dataframe(expensive_df, use_container_width=True, hide_index=True)
+        else:
+            st.info("No purchase data for selected period")
+    
+    with col2:
+        st.subheader("Store Comparison")
+        
+        store_comparison_query = f"""
+        SELECT 
+            store,
+            COUNT(*) as purchases,
+            SUM(price_paid) as total_spent,
+            AVG(price_paid) as avg_per_item
+        FROM purchases p
+        {date_filter}
+        GROUP BY store
+        """
+        store_data = pd.DataFrame(execute_query(store_comparison_query))
+        
+        if not store_data.empty:
+            store_data['total_spent'] = store_data['total_spent'].astype(float)
+            store_data['avg_per_item'] = store_data['avg_per_item'].astype(float)
+            
             fig, ax = plt.subplots(figsize=(6, 4))
-            colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'][:len(store_data)]
+            colors = ['#1f77b4', '#ff7f0e']
             ax.bar(store_data['store'], store_data['total_spent'], color=colors)
             ax.set_ylabel('Total Spent (£)')
             ax.set_title('Total Spending by Store')
             plt.tight_layout()
             st.pyplot(fig)
             plt.close()
-        
-        with col2:
-            st.dataframe(store_data, use_container_width=True)
-
-# TAB 2: PRICE TRACKER
-with tab2:
-    st.header("Price Intelligence")
+            
+            st.dataframe(store_data, use_container_width=True, hide_index=True)
+        else:
+            st.info("No store data for selected period")
     
-    # Get latest prices
-    latest_prices_query = """
+    st.markdown("---")
+    
+    # Promotional price analysis
+    st.subheader("Promotional Price Usage")
+    
+    promo_query = f"""
     SELECT 
-        product_name,
-        store,
-        regular_price,
-        promotional_price,
-        promotion_type,
-        price_date
-    FROM latest_prices
-    ORDER BY product_name, store
+        promotional_price_used,
+        COUNT(*) as count,
+        SUM(price_paid) as total_spent
+    FROM purchases p
+    {date_filter}
+    GROUP BY promotional_price_used
     """
-    prices_df = pd.DataFrame(execute_query(latest_prices_query))
+    promo_data = pd.DataFrame(execute_query(promo_query))
     
-    if not prices_df.empty:
-        # Filter by product
-        products = sorted(prices_df['product_name'].unique())
-        selected_product = st.selectbox("Select a product to compare:", products)
+    if not promo_data.empty:
+        promo_data['promotional_price_used'] = promo_data['promotional_price_used'].map({
+            True: 'Clubcard/Nectar', 
+            False: 'Regular Price'
+        })
+        promo_data['total_spent'] = promo_data['total_spent'].astype(float)
         
-        product_prices = prices_df[prices_df['product_name'] == selected_product]
-        
-        st.subheader(f"Price Comparison: {selected_product}")
-        
-        # Display comparison
         col1, col2 = st.columns(2)
         
-        for idx, row in product_prices.iterrows():
-            col = col1 if idx % 2 == 0 else col2
-            
-            with col:
-                with st.container():
-                    st.markdown(f"### {row['store']}")
-                    
-                    if pd.notna(row['promotional_price']):
-                        st.markdown(f"~~£{row['regular_price']:.2f}~~ **£{row['promotional_price']:.2f}**")
-                        st.markdown(f"*{row['promotion_type']}*")
-                        savings = row['regular_price'] - row['promotional_price']
-                        st.success(f"Save £{savings:.2f}")
-                    else:
-                        st.markdown(f"**£{row['regular_price']:.2f}**")
-                    
-                    st.caption(f"Updated: {row['price_date']}")
+        with col1:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            ax.bar(promo_data['promotional_price_used'], promo_data['count'], color=['#2ca02c', '#d62728'])
+            ax.set_ylabel('Number of Items')
+            ax.set_title('Promotional vs Regular Purchases')
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
         
-        st.markdown("---")
-        
-        # All prices table
-        st.subheader("All Current Prices")
-        st.dataframe(prices_df, use_container_width=True)
-    else:
-        st.info("No price data available")
+        with col2:
+            st.dataframe(promo_data, use_container_width=True, hide_index=True)
 
-# TAB 3: WASTE LOG
+# TAB 3: WASTE INSIGHTS
 with tab3:
-    st.header("Consumption & Waste Analysis")
+    st.header("🗑️ Waste Insights")
     
-    # Waste by category
     waste_by_category_query = """
     SELECT * FROM waste_by_category
     """
     waste_df = pd.DataFrame(execute_query(waste_by_category_query))
     
     if not waste_df.empty:
-        # Convert Decimal columns to float
         waste_df['avg_waste_rate'] = waste_df['avg_waste_rate'].astype(float)
         waste_df['total_waste_cost'] = waste_df['total_waste_cost'].astype(float)
         
         col1, col2 = st.columns(2)
         
         with col1:
-            st.subheader("Waste by Category")
+            st.subheader("Waste Cost by Category")
             fig, ax = plt.subplots(figsize=(8, 6))
-            ax.barh(waste_df['category'], waste_df['total_waste_cost'], color='#ff7f0e')
-            ax.set_xlabel('Total Waste Cost (£)')
-            ax.set_title('Which Categories Cost You Most in Waste?')
+            ax.barh(waste_df['category'], waste_df['total_waste_cost'], color='#d62728')
+            ax.set_xlabel('Waste Cost (£)')
             plt.tight_layout()
             st.pyplot(fig)
             plt.close()
         
         with col2:
-            st.subheader("Average Waste Rate")
+            st.subheader("Waste Rate by Category")
             fig, ax = plt.subplots(figsize=(8, 6))
-            # Convert to numpy array of floats
-            waste_rates = waste_df['avg_waste_rate'].values.astype(float)
-            
-            # Normalize to 0-1 range for colormap
+            waste_rates = waste_df['avg_waste_rate'].values
+            # Normalize for color mapping
             if len(waste_rates) > 1 and waste_rates.max() > waste_rates.min():
                 norm_rates = (waste_rates - waste_rates.min()) / (waste_rates.max() - waste_rates.min())
             else:
                 norm_rates = waste_rates / (waste_rates.max() + 0.001)
-            
             colors = plt.cm.RdYlGn_r(norm_rates)
-            
-            ax.barh(waste_df['category'], waste_rates, color=colors)
-            ax.set_xlabel('Average Waste Rate (0-1)')
-            ax.set_title('Proportion Wasted by Category')
+            ax.barh(waste_df['category'], waste_rates * 100, color=colors)
+            ax.set_xlabel('Waste Rate (%)')
             plt.tight_layout()
             st.pyplot(fig)
             plt.close()
         
         st.markdown("---")
-        st.dataframe(waste_df, use_container_width=True)
+        st.dataframe(waste_df, use_container_width=True, hide_index=True)
         
         # Total waste summary
-        total_waste_cost = float(waste_df['total_waste_cost'].sum())
+        total_waste_cost = waste_df['total_waste_cost'].sum()
         st.error(f"💸 **Total money wasted: £{total_waste_cost:.2f}**")
+        
+        # Waste reasons breakdown
+        st.markdown("---")
+        st.subheader("Why Are You Wasting?")
+        
+        reasons_query = """
+        SELECT 
+            waste_reason,
+            COUNT(*) as count,
+            SUM(waste_cost_gbp) as cost
+        FROM consumption_log
+        WHERE waste_reason IS NOT NULL
+        GROUP BY waste_reason
+        ORDER BY cost DESC
+        """
+        reasons_df = pd.DataFrame(execute_query(reasons_query))
+        
+        if not reasons_df.empty:
+            reasons_df['cost'] = reasons_df['cost'].astype(float)
+            
+            fig, ax = plt.subplots(figsize=(10, 5))
+            ax.bar(reasons_df['waste_reason'], reasons_df['cost'], color='#ff7f0e')
+            ax.set_xlabel('Reason')
+            ax.set_ylabel('Total Cost (£)')
+            ax.set_title('Waste Cost by Reason')
+            plt.xticks(rotation=45, ha='right')
+            plt.tight_layout()
+            st.pyplot(fig)
+            plt.close()
+            
+            st.dataframe(reasons_df, use_container_width=True, hide_index=True)
     else:
-        st.info("No waste data available")
+        st.info("No waste data available yet. Start logging your weekly consumption!")
 
-# TAB 4: SHOPPING LIST
+# TAB 4: EXPIRING SOON
 with tab4:
-    st.header("Smart Shopping List")
+    st.header("⚠️ Items Expiring Soon")
     
-    st.info("🚧 Shopping list generation coming in Phase 6 (Forecasting Module)")
+    # Check if expiry_date column exists
+    try:
+        expiring_query = """
+        SELECT 
+            product_name,
+            purchase_date,
+            expiry_date,
+            days_until_expiry,
+            price_paid
+        FROM expiring_soon
+        ORDER BY days_until_expiry
+        """
+        
+        expiring_df = pd.DataFrame(execute_query(expiring_query))
+        
+        if not expiring_df.empty:
+            expiring_df['price_paid'] = expiring_df['price_paid'].astype(float)
+            
+            # Group by urgency
+            today = expiring_df[expiring_df['days_until_expiry'] == 0]
+            tomorrow = expiring_df[expiring_df['days_until_expiry'] == 1]
+            this_week = expiring_df[(expiring_df['days_until_expiry'] > 1) & (expiring_df['days_until_expiry'] <= 7)]
+            
+            if not today.empty:
+                st.error(f"🚨 **{len(today)} items expire TODAY!**")
+                st.dataframe(today, use_container_width=True, hide_index=True)
+                st.markdown("---")
+            
+            if not tomorrow.empty:
+                st.warning(f"⚠️ **{len(tomorrow)} items expire tomorrow**")
+                st.dataframe(tomorrow, use_container_width=True, hide_index=True)
+                st.markdown("---")
+            
+            if not this_week.empty:
+                st.info(f"📅 **{len(this_week)} items expire this week**")
+                st.dataframe(this_week, use_container_width=True, hide_index=True)
+            
+            # Priority consumption list
+            st.markdown("---")
+            st.subheader("🎯 Priority Consumption Order")
+            st.markdown("Eat these items first to minimize waste:")
+            
+            priority_list = expiring_df.head(10)
+            for idx, item in priority_list.iterrows():
+                days = item['days_until_expiry']
+                if days == 0:
+                    st.error(f"**Priority {idx+1}:** {item['product_name']} - Expires TODAY!")
+                elif days == 1:
+                    st.warning(f"**Priority {idx+1}:** {item['product_name']} - Expires tomorrow")
+                else:
+                    st.info(f"**Priority {idx+1}:** {item['product_name']} - Expires in {days} days")
+        else:
+            st.success("✅ No items expiring soon!")
     
-    # Show most frequently bought items for now
-    frequent_items_query = """
-    SELECT 
-        p.name,
-        COUNT(*) as purchase_count,
-        AVG(pur.price_paid) as avg_price,
-        MIN(pur.date) as first_bought,
-        MAX(pur.date) as last_bought
-    FROM purchases pur
-    JOIN products p ON pur.product_id = p.product_id
-    GROUP BY p.name
-    ORDER BY purchase_count DESC
-    LIMIT 10
-    """
-    frequent_df = pd.DataFrame(execute_query(frequent_items_query))
-    
-    if not frequent_df.empty:
-        st.subheader("Your Most Frequently Bought Items")
-        st.dataframe(frequent_df, use_container_width=True)
+    except Exception as e:
+        st.warning("⚠️ Expiry tracking not available yet. Add the expiry_date column to your purchases to use this feature!")
+        st.caption(f"Error: {e}")
 
-# Footer
 st.markdown("---")
-st.markdown("*Solo Shopper - Built with Streamlit | Data stored in Supabase PostgreSQL*")
+st.caption("*Solo Shopper - Built with Streamlit | Data stored in Supabase PostgreSQL*")
