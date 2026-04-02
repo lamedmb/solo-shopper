@@ -202,13 +202,9 @@ MIT License - See LICENSE file for details
 
 ## 👤 Author
 
-**[Your Name]**
-- Portfolio: [yourportfolio.com]
-- LinkedIn: [linkedin.com/in/yourprofile]
-- Email: your.email@example.com
+**[Lohla Bui]**
 
 ---
 
-**Built as a portfolio project demonstrating end-to-end data analytics and engineering skills**
 
 *Started: April 2026 | Status: Active Development*
